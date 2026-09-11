@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>도지 러너 8비트 — 과제2 미니게임</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0b0e1a; --panel:#121729; --panel2:#0d1120; --border:#232a45;
+    --text:#d7dceb; --muted:#7c86a8;
+    --neon:#39ff88; --neonDim:rgba(57,255,136,.15);
+    --bad:#ff4d6d; --badDim:rgba(255,77,109,.15);
+    --warn:#ffd166;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
+    font-family:'Consolas','Courier New',monospace;}
+  .pixel{font-family:'Press Start 2P','Consolas',monospace;}
+  .wrap{max-width:920px;margin:0 auto;padding:20px 16px 40px;display:flex;flex-direction:column;gap:14px;}
+  h1{font-size:15px;line-height:1.6;margin:0 0 6px;color:var(--neon);
+     text-shadow:0 0 8px var(--neonDim);letter-spacing:1px;}
+  .sub{color:var(--muted);font-size:12px;}
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:4px;padding:14px;}
+  .row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;}
+  .between{justify-content:space-between;}
+  button{background:var(--panel2);color:var(--text);border:1px solid var(--border);
+    border-radius:3px;padding:7px 11px;font-family:inherit;font-size:12px;cursor:pointer;}
+  button:hover{border-color:var(--neon);color:var(--neon);}
+  button:focus-visible{outline:2px solid var(--neon);outline-offset:1px;}
+  button.primary{background:var(--neon);color:#04150c;border-color:var(--neon);font-weight:bold;}
+  button.primary:hover{color:#04150c;filter:brightness(1.1);}
+  button.danger{border-color:var(--bad);color:var(--bad);}
+  button.danger:hover{color:#fff;background:var(--bad);}
+  input[type=range]{width:150px;accent-color:var(--neon);}
+  label{font-size:12px;color:var(--muted);}
+  .stage{position:relative;width:100%;aspect-ratio:3/2;background:#000;
+    border:2px solid var(--border);border-radius:4px;overflow:hidden;}
+  canvas{width:100%;height:100%;image-rendering:pixelated;image-rendering:crisp-edges;display:block;}
+  .scanlines{position:absolute;inset:0;pointer-events:none;
+    background:repeating-linear-gradient(rgba(0,0,0,0) 0px, rgba(0,0,0,0) 2px, rgba(0,0,0,.18) 3px);}
+  .overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;gap:8px;background:rgba(3,5,12,.72);text-align:center;padding:12px;}
+  .hud{position:absolute;top:6px;left:8px;font-size:11px;color:#eaf6ee;text-shadow:1px 1px 0 #000;}
+  .hint{font-size:12px;color:var(--muted);}
+  table{width:100%;border-collapse:collapse;font-size:11px;}
+  th,td{border-bottom:1px solid var(--border);padding:5px 6px;text-align:left;}
+  th{color:var(--muted);font-weight:normal;}
+  .tag{display:inline-block;padding:1px 7px;border-radius:9px;font-size:10px;}
+  .tag.good{background:var(--neonDim);color:var(--neon);}
+  .tag.bad{background:var(--badDim);color:var(--bad);}
+  textarea,.reasonInput{width:100%;background:var(--panel2);color:var(--text);
+    border:1px solid var(--border);border-radius:3px;font-family:inherit;font-size:11px;padding:7px;}
+  textarea{height:90px;}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  @media (max-width:640px){.grid2{grid-template-columns:1fr;}}
+  details summary{cursor:pointer;font-size:12px;color:var(--neon);}
+  .small{font-size:11.5px;color:var(--muted);line-height:1.6;}
+  .touchpad{position:absolute;bottom:6px;left:6px;right:6px;display:flex;justify-content:space-between;}
+  .touchpad button{width:54px;height:42px;opacity:.6;font-size:16px;}
+  .logwrap{max-height:230px;overflow:auto;margin-top:8px;}
+  .statLine{margin-bottom:6px;}
+  .statLine b{color:var(--text);}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div>
+    <h1 class="pixel">DODGE RUNNER 8-BIT</h1>
+    <div class="sub">과제2 — 내가 설계한 미니게임 · 피하기 장르 · 로그인 없음 · 30초 라운드</div>
+  </div>
+
+  <div class="panel row between">
+    <div class="row">
+      <label>난이도 값 (1~10 · 장애물 낙하 속도만 바뀝니다)</label>
+      <input id="diffSlider" type="range" min="1" max="10" step="1" value="5">
+      <span id="diffVal" class="pixel" style="font-size:11px;color:var(--neon);">5</span>
+    </div>
+    <div class="row">
+      <button id="muteBtn">소리 켜짐</button>
+      <button id="motionBtn">효과 감소 꺼짐</button>
+    </div>
+  </div>
+
+  <div class="stage" id="stage" tabindex="0">
+    <canvas id="game" width="240" height="160"></canvas>
+    <div class="scanlines"></div>
+    <div class="hud" id="hud"></div>
+    <div class="overlay" id="overlay"></div>
+    <div class="touchpad">
+      <button id="btnLeft" aria-label="왼쪽 이동">◀</button>
+      <button id="btnRight" aria-label="오른쪽 이동">▶</button>
+    </div>
+  </div>
+  <div class="hint">화면을 클릭한 뒤 방향키(← →) 또는 A / D로 이동합니다. Space나 Enter로 시작하고, R로 언제든 다시 시작합니다.</div>
+
+  <div class="grid2">
+    <div class="panel">
+      <div class="row between">
+        <b style="font-size:13px;">기록 (최근 20회)</b>
+        <div class="row">
+          <button id="exportBtn">내보내기</button>
+          <button id="resetLogBtn" class="danger">기록 삭제</button>
+        </div>
+      </div>
+      <div class="logwrap">
+        <table>
+          <thead><tr><th>#</th><th>난이도</th><th>결과</th><th>생존</th><th>원인</th></tr></thead>
+          <tbody id="logBody"></tbody>
+        </table>
+      </div>
+      <textarea id="exportArea" style="display:none;margin-top:8px;" readonly></textarea>
+    </div>
+
+    <div class="panel">
+      <b style="font-size:13px;">난이도별 비교 (최종 선택용)</b>
+      <div id="statsBody" class="small" style="margin-top:8px;"></div>
+      <div class="row" style="margin-top:10px;">
+        <input id="finalReason" class="reasonInput" placeholder="최종 난이도 선택 이유를 기록 근거로 직접 작성">
+      </div>
+      <div class="row" style="margin-top:8px;">
+        <button id="finalBtn" class="primary">이 값으로 최종 선택</button>
+      </div>
+      <div id="finalShown" class="small" style="margin-top:8px;color:var(--neon);"></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="row between">
+      <b style="font-size:13px;">저장 데이터 (window.storage 사용, 개인 기기별 저장)</b>
+      <div class="row">
+        <button id="saveNowBtn">지금 저장</button>
+        <button id="corruptBtn" class="danger">손상 시뮬레이션</button>
+        <button id="wipeBtn" class="danger">저장 초기화</button>
+      </div>
+    </div>
+    <div id="saveStatus" class="small" style="margin-top:8px;"></div>
+  </div>
+
+  <details class="panel">
+    <summary>완주 체크리스트 자가 확인 방법</summary>
+    <ul class="small" id="checklist" style="margin:8px 0 0;padding-left:18px;"></ul>
+  </details>
+</div>
+
+<script>
+(function(){
+  const CFG = { W:240, H:160, playerW:16, playerH:8, playerSpeed:140,
+                spawnIntervalMs:450, obstacleSize:8, roundSeconds:30 };
+  const STORAGE_KEY = 'dodge8bit:save-v1';
+
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+  const stage = document.getElementById('stage');
+  const overlay = document.getElementById('overlay');
+  const hud = document.getElementById('hud');
+  const diffSlider = document.getElementById('diffSlider');
+  const diffVal = document.getElementById('diffVal');
+  const muteBtn = document.getElementById('muteBtn');
+  const motionBtn = document.getElementById('motionBtn');
+  const logBody = document.getElementById('logBody');
+  const statsBody = document.getElementById('statsBody');
+  const saveStatus = document.getElementById('saveStatus');
+  const checklist = document.getElementById('checklist');
+
+  let state = {
+    screen:'ready', difficulty:5, muted:false, reduceMotion:false,
+    elapsed:0, player:{x:CFG.W/2-CFG.playerW/2}, obstacles:[], spawnAcc:0,
+    log:[], finalChoice:null, shake:0, flash:0,
+  };
+  let input = {left:false, right:false};
+  let audioCtx = null;
+
+  function beep(freq,dur,vol){
+    if(state.muted) return;
+    try{
+      if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.type='square'; o.frequency.value=freq; g.gain.value=vol||0.05;
+      o.connect(g); g.connect(audioCtx.destination);
+      o.start(); o.stop(audioCtx.currentTime+dur);
+    }catch(e){}
+  }
+
+  function defaultSave(){ return {difficulty:5, muted:false, reduceMotion:false, log:[], finalChoice:null}; }
+  function validateSave(o){ return o && typeof o==='object' && typeof o.difficulty==='number' && Array.isArray(o.log); }
+
+  async function loadSave(){
+    try{
+      const res = await window.storage.get(STORAGE_KEY, false);
+      if(!res){ saveStatus.textContent='저장된 기록이 없어 기본값으로 시작합니다.'; return defaultSave(); }
+      let parsed;
+      try{ parsed = JSON.parse(res.value); }
+      catch(e){ saveStatus.textContent='저장값 손상을 감지해 기본값으로 복구했습니다.'; return defaultSave(); }
+      if(!validateSave(parsed)){ saveStatus.textContent='저장 형식이 올바르지 않아 기본값으로 복구했습니다.'; return defaultSave(); }
+      saveStatus.textContent='저장된 기록을 불러왔습니다 (기록 '+parsed.log.length+'개).';
+      return Object.assign(defaultSave(), parsed);
+    }catch(e){ saveStatus.textContent='저장소 접근에 실패해 기본값으로 진행합니다.'; return defaultSave(); }
+  }
+
+  async function persist(){
+    try{
+      const payload = { difficulty:state.difficulty, muted:state.muted, reduceMotion:state.reduceMotion,
+        log:state.log.slice(-20), finalChoice:state.finalChoice };
+      await window.storage.set(STORAGE_KEY, JSON.stringify(payload), false);
+    }catch(e){}
+  }
+
+  function resetRound(){
+    state.elapsed=0; state.player.x=CFG.W/2-CFG.playerW/2;
+    state.obstacles=[]; state.spawnAcc=0; state.shake=0; state.flash=0;
+  }
+  function startRound(){ resetRound(); state.screen='playing'; updateOverlay(); }
+  function endRound(result,cause){
+    state.screen=result; addLog(result,state.elapsed,cause); updateOverlay(); persist();
+  }
+  function addLog(result,time,cause){
+    state.log.push({d:state.difficulty, r:result, t:Math.round(time*10)/10, c:cause, ts:Date.now()});
+    if(state.log.length>20) state.log=state.log.slice(-20);
+    renderLog(); renderStats();
+  }
+
+  function fallSpeed(){ return 40 + state.difficulty*12; }
+
+  function update(dt){
+    if(state.shake>0) state.shake=Math.max(0,state.shake-dt*4);
+    if(state.flash>0) state.flash=Math.max(0,state.flash-dt*3);
+    if(state.screen!=='playing') return;
+
+    state.elapsed += dt;
+    let vx=0;
+    if(input.left) vx-=CFG.playerSpeed;
+    if(input.right) vx+=CFG.playerSpeed;
+    state.player.x = Math.max(0, Math.min(CFG.W-CFG.playerW, state.player.x+vx*dt));
+
+    state.spawnAcc += dt*1000;
+    if(state.spawnAcc>=CFG.spawnIntervalMs){
+      state.spawnAcc -= CFG.spawnIntervalMs;
+      const cols = Math.floor(CFG.W/16);
+      const x = Math.floor(Math.random()*cols)*16;
+      state.obstacles.push({x, y:-CFG.obstacleSize, s:CFG.obstacleSize});
+    }
+    const speed = fallSpeed();
+    for(const o of state.obstacles) o.y += speed*dt;
+    state.obstacles = state.obstacles.filter(o=>o.y<CFG.H+20);
+
+    const p = {x:state.player.x, y:CFG.H-CFG.playerH-4, w:CFG.playerW, h:CFG.playerH};
+    for(const o of state.obstacles){
+      if(rectHit(p,{x:o.x,y:o.y,w:o.s,h:o.s})){
+        beep(120,0.2,0.08);
+        if(!state.reduceMotion){ state.shake=1; state.flash=1; }
+        endRound('fail','충돌');
+        return;
+      }
+    }
+    if(state.elapsed>=CFG.roundSeconds){ beep(880,0.15,0.06); endRound('success','생존 완료'); }
+  }
+  function rectHit(a,b){ return a.x<b.x+b.w && a.x+a.w>b.x && a.y<b.y+b.h && a.y+a.h>b.y; }
+
+  function render(){
+    ctx.save();
+    ctx.fillStyle='#050810'; ctx.fillRect(0,0,CFG.W,CFG.H);
+    let ox=0,oy=0;
+    if(state.shake>0){ ox=(Math.random()*2-1)*3*state.shake; oy=(Math.random()*2-1)*3*state.shake; }
+    ctx.translate(ox,oy);
+    ctx.fillStyle='#1a2338';
+    for(let i=0;i<20;i++){
+      const sx=(i*37)%CFG.W;
+      const sy=((i*53)+(state.reduceMotion?0:Math.floor(performance.now()/40)))%CFG.H;
+      ctx.fillRect(sx,sy,1,1);
+    }
+    ctx.fillStyle='#ff4d6d';
+    for(const o of state.obstacles) ctx.fillRect(o.x,o.y,o.s,o.s);
+    ctx.fillStyle='#39ff88';
+    ctx.fillRect(state.player.x, CFG.H-CFG.playerH-4, CFG.playerW, CFG.playerH);
+    if(state.flash>0){ ctx.fillStyle='rgba(255,77,109,'+(0.35*state.flash)+')'; ctx.fillRect(0,0,CFG.W,CFG.H); }
+    ctx.restore();
+    hud.textContent = state.screen==='playing'
+      ? ('시간 '+state.elapsed.toFixed(1)+' / '+CFG.roundSeconds+'초  난이도 '+state.difficulty)
+      : '';
+  }
+
+  function updateOverlay(){
+    if(state.screen==='ready'){
+      overlay.style.display='flex';
+      overlay.innerHTML='<div class="pixel" style="font-size:12px;color:#39ff88;">READY</div><div class="small">Space 또는 Enter로 시작</div>';
+    } else if(state.screen==='success'){
+      overlay.style.display='flex';
+      overlay.innerHTML='<div style="color:#39ff88;font-weight:bold;">성공! '+CFG.roundSeconds+'초 생존</div><div class="small">R 또는 화면 클릭으로 다시 시작</div>';
+    } else if(state.screen==='fail'){
+      overlay.style.display='flex';
+      overlay.innerHTML='<div style="color:#ff4d6d;font-weight:bold;">실패 — 충돌 (생존 '+state.elapsed.toFixed(1)+'초)</div><div class="small">R 또는 화면 클릭으로 다시 시작</div>';
+    } else if(state.screen==='paused'){
+      overlay.style.display='flex';
+      overlay.innerHTML='<div>일시정지 (창이 비활성 상태입니다)</div>';
+    } else { overlay.style.display='none'; }
+  }
+
+  function renderLog(){
+    logBody.innerHTML = state.log.slice().reverse().map((e,i)=>{
+      const n = state.log.length-i;
+      const tag = e.r==='success' ? '<span class="tag good">성공</span>' : '<span class="tag bad">실패</span>';
+      return '<tr><td>'+n+'</td><td>'+e.d+'</td><td>'+tag+'</td><td>'+e.t+'초</td><td>'+e.c+'</td></tr>';
+    }).join('') || '<tr><td colspan="5" class="small">아직 기록이 없습니다.</td></tr>';
+  }
+  function median(arr){ const s=[...arr].sort((a,b)=>a-b); const m=Math.floor(s.length/2); return s.length%2? s[m] : (s[m-1]+s[m])/2; }
+  function renderStats(){
+    const groups={};
+    for(const e of state.log){ (groups[e.d]=groups[e.d]||[]).push(e); }
+    const rows = Object.keys(groups).sort((a,b)=>a-b).map(d=>{
+      const arr=groups[d], times=arr.map(e=>e.t), fails=arr.filter(e=>e.r==='fail');
+      const cc={}; fails.forEach(e=>cc[e.c]=(cc[e.c]||0)+1);
+      const topCause = Object.keys(cc).sort((a,b)=>cc[b]-cc[a])[0] || '없음';
+      const successRate = Math.round(100*(arr.length-fails.length)/arr.length);
+      return '<div class="statLine">난이도 <b>'+d+'</b>: '+arr.length+'회 플레이, 성공률 '+successRate+'%, 생존시간 '
+        +Math.min(...times).toFixed(1)+'~'+Math.max(...times).toFixed(1)+'초 (중앙값 '+median(times).toFixed(1)+'초), 주요 실패 원인 '+topCause+'</div>';
+    });
+    statsBody.innerHTML = rows.join('') || '<span class="small">같은 난이도 값으로 10회씩 두 그룹을 플레이하면 여기에 비교가 표시됩니다.</span>';
+  }
+
+  window.addEventListener('keydown', e=>{
+    const tag=(document.activeElement && document.activeElement.tagName)||'';
+    if(tag==='INPUT'||tag==='TEXTAREA') return;
+    const keys=['ArrowLeft','a','A','ArrowRight','d','D',' ','Enter','r','R'];
+    if(keys.includes(e.key)) e.preventDefault();
+    if(['ArrowLeft','a','A'].includes(e.key)) input.left=true;
+    if(['ArrowRight','d','D'].includes(e.key)) input.right=true;
+    if((e.key===' '||e.key==='Enter') && state.screen==='ready') startRound();
+    if((e.key==='r'||e.key==='R') && state.screen!=='ready') startRound();
+  });
+  window.addEventListener('keyup', e=>{
+    if(['ArrowLeft','a','A'].includes(e.key)) input.left=false;
+    if(['ArrowRight','d','D'].includes(e.key)) input.right=false;
+  });
+  function bindHold(btn,key){
+    const on=()=>input[key]=true, off=()=>input[key]=false;
+    btn.addEventListener('mousedown',on);
+    btn.addEventListener('touchstart',ev=>{ev.preventDefault();on();});
+    ['mouseup','mouseleave','touchend','touchcancel'].forEach(ev=>btn.addEventListener(ev,off));
+  }
+  bindHold(document.getElementById('btnLeft'),'left');
+  bindHold(document.getElementById('btnRight'),'right');
+  stage.addEventListener('click', ()=>{
+    if(state.screen==='ready'||state.screen==='success'||state.screen==='fail') startRound();
+  });
+
+  diffSlider.addEventListener('input', ()=>{ state.difficulty=Number(diffSlider.value); diffVal.textContent=state.difficulty; persist(); });
+  muteBtn.addEventListener('click', ()=>{ state.muted=!state.muted; muteBtn.textContent= state.muted?'소리 꺼짐':'소리 켜짐'; persist(); });
+  motionBtn.addEventListener('click', ()=>{ state.reduceMotion=!state.reduceMotion; motionBtn.textContent='효과 감소 '+(state.reduceMotion?'켜짐':'꺼짐'); persist(); });
+
+  document.getElementById('exportBtn').addEventListener('click', ()=>{
+    const area=document.getElementById('exportArea');
+    area.style.display='block'; area.value=JSON.stringify(state.log,null,2); area.select();
+  });
+  document.getElementById('resetLogBtn').addEventListener('click', ()=>{ state.log=[]; renderLog(); renderStats(); persist(); });
+  document.getElementById('finalBtn').addEventListener('click', ()=>{
+    const reason=document.getElementById('finalReason').value.trim();
+    if(!reason){ alert('기록을 근거로 선택 이유를 먼저 적어 주세요.'); return; }
+    state.finalChoice={difficulty:state.difficulty, reason, ts:Date.now()};
+    document.getElementById('finalShown').textContent='최종 난이도 '+state.difficulty+' 선택됨 — '+reason;
+    persist();
+  });
+  document.getElementById('saveNowBtn').addEventListener('click', persist);
+  document.getElementById('corruptBtn').addEventListener('click', async ()=>{
+    try{ await window.storage.set(STORAGE_KEY, '{이건 깨진 JSON', false);
+      saveStatus.textContent='저장값을 의도적으로 손상시켰습니다. 새로고침하여 복구되는지 확인하세요.'; }
+    catch(e){ saveStatus.textContent='손상 시뮬레이션 실패: '+e; }
+  });
+  document.getElementById('wipeBtn').addEventListener('click', async ()=>{
+    try{ await window.storage.delete(STORAGE_KEY, false); }catch(e){}
+    state.log=[]; state.finalChoice=null; renderLog(); renderStats();
+    document.getElementById('finalShown').textContent=''; saveStatus.textContent='저장 데이터를 초기화했습니다.';
+  });
+
+  function pauseIfPlaying(){ if(state.screen==='playing'){ state.screen='paused'; updateOverlay(); } }
+  function resumeIfPaused(){ if(state.screen==='paused'){ state.screen='playing'; updateOverlay(); } }
+  window.addEventListener('blur', pauseIfPlaying);
+  window.addEventListener('focus', resumeIfPaused);
+  document.addEventListener('visibilitychange', ()=>{ if(document.hidden) pauseIfPlaying(); else resumeIfPaused(); });
+
+  checklist.innerHTML = [
+    '30초 핵심 루프와 재시작: Space로 시작 → 30초 생존 시 성공 / 충돌 시 실패 → R로 즉시 재시작됩니다.',
+    'PC 경계와 10분 실행: 창 크기를 바꿔도 화면이 잘리지 않는지, 다른 탭으로 갔다 와도 상태가 유지되는지, 10분 이상 켜둬도 콘솔에 오류가 없는지 직접 확인하세요.',
+    '20회 기록 비교: 슬라이더로 난이도 값 하나만 바꿔 각각 10회씩 플레이하면 아래 비교표에 자동 집계됩니다.',
+    '저장 초기화와 손상 복구: "손상 시뮬레이션" 클릭 후 새로고침하면 기본값으로 복구되는지 확인하세요.',
+    '효과 선택권과 공개 안전: 효과 감소·음소거가 즉시 적용되고, 로그인이나 개인정보 입력이 전혀 없습니다.'
+  ].map(t=>'<li>'+t+'</li>').join('');
+
+  let last = performance.now();
+  function loop(now){
+    let dt=(now-last)/1000; last=now; dt=Math.min(dt,0.05);
+    update(dt); render();
+    requestAnimationFrame(loop);
+  }
+
+  (async function init(){
+    const saved = await loadSave();
+    state.difficulty=saved.difficulty; state.muted=saved.muted; state.reduceMotion=saved.reduceMotion;
+    state.log=saved.log; state.finalChoice=saved.finalChoice;
+    diffSlider.value=state.difficulty; diffVal.textContent=state.difficulty;
+    muteBtn.textContent = state.muted?'소리 꺼짐':'소리 켜짐';
+    motionBtn.textContent = '효과 감소 '+(state.reduceMotion?'켜짐':'꺼짐');
+    if(state.finalChoice) document.getElementById('finalShown').textContent='최종 난이도 '+state.finalChoice.difficulty+' 선택됨 — '+state.finalChoice.reason;
+    renderLog(); renderStats(); updateOverlay();
+    requestAnimationFrame(loop);
+  })();
+})();
+</script>
+</body>
+</html>
